@@ -9,6 +9,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 🔥 CONEXÃO COM BANCO (CORRIGIDA)
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -17,6 +18,11 @@ const db = mysql.createConnection({
   port: process.env.DB_PORT
 });
 
+// 🔍 DEBUG (MOSTRA SE VARIÁVEIS ESTÃO FUNCIONANDO)
+console.log("DB_HOST:", process.env.DB_HOST);
+console.log("DB_USER:", process.env.DB_USER);
+console.log("DB_NAME:", process.env.DB_NAME);
+console.log("DB_PORT:", process.env.DB_PORT);
 
 // 🔒 MIDDLEWARE TOKEN
 function verificarToken(req, res, next) {
@@ -35,23 +41,30 @@ function verificarToken(req, res, next) {
   });
 }
 
-// 🔐 LOGIN ADMIN (SEU ORIGINAL)
+// 🔐 LOGIN ADMIN
 app.post("/login", (req, res) => {
   const { usuario, senha } = req.body;
+
   db.query("SELECT * FROM admin WHERE usuario = ?", [usuario], async (err, result) => {
     if (err) return res.status(500).json({ msg: "Erro no servidor" });
     if (result.length === 0) return res.status(401).json({ msg: "Usuário não encontrado" });
 
     const admin = result[0];
     const senhaValida = await bcrypt.compare(senha, admin.senha);
+
     if (!senhaValida) return res.status(401).json({ msg: "Senha incorreta" });
 
-    const token = jwt.sign({ id: admin.id, usuario: admin.usuario }, "segredo123", { expiresIn: "1h" });
+    const token = jwt.sign(
+      { id: admin.id, usuario: admin.usuario },
+      "segredo123",
+      { expiresIn: "1h" }
+    );
+
     res.json({ msg: "Login sucesso 🔥", token });
   });
 });
 
-// 🔥 NOVO → CADASTRO CLIENTE
+// 🔥 CADASTRO CLIENTE
 app.post("/cadastro", async (req, res) => {
   const { nome, telefone, usuario, senha } = req.body;
 
@@ -71,7 +84,7 @@ app.post("/cadastro", async (req, res) => {
   );
 });
 
-// 🔥 NOVO → LOGIN CLIENTE
+// 🔥 LOGIN CLIENTE
 app.post("/login-cliente", (req, res) => {
   const { usuario, senha } = req.body;
 
@@ -84,38 +97,56 @@ app.post("/login-cliente", (req, res) => {
 
     if (!senhaValida) return res.status(401).json({ msg: "Senha incorreta" });
 
-    const token = jwt.sign({ id: cliente.id, tipo: "cliente" }, "segredo123", { expiresIn: "1h" });
+    const token = jwt.sign(
+      { id: cliente.id, tipo: "cliente" },
+      "segredo123",
+      { expiresIn: "1h" }
+    );
 
     res.json({ msg: "Login cliente sucesso", token });
   });
 });
 
+// 🔌 CONECTAR NO BANCO
 db.connect(err => {
-  if (err) console.log("Erro no MySQL:", err);
-  else console.log("MySQL conectado 🔥");
+  if (err) {
+    console.log("Erro no MySQL:", err);
+  } else {
+    console.log("MySQL conectado 🔥");
+  }
 });
 
-// 🔹 AGENDAR (SEU ORIGINAL)
+// 🔹 AGENDAR
 app.post("/agendar", (req, res) => {
   const { nome, telefone, data, hora } = req.body;
-  if (!nome || !telefone || !data || !hora) return res.status(400).json({ msg: "Preencha tudo" });
 
-  db.query("SELECT * FROM agendamentos WHERE data = ? AND hora = ?", [data, hora], (err, result) => {
-    if (err) return res.status(500).json({ msg: "Erro no servidor" });
-    if (result.length > 0) return res.status(400).json({ msg: "Horário já ocupado" });
+  if (!nome || !telefone || !data || !hora) {
+    return res.status(400).json({ msg: "Preencha tudo" });
+  }
 
-    db.query(
-      "INSERT INTO agendamentos (nome, telefone, data, hora, status) VALUES (?, ?, ?, ?, ?)",
-      [nome, telefone, data, hora, "pendente"],
-      (err) => {
-        if (err) return res.status(500).json({ msg: "Erro ao salvar" });
-        res.json({ msg: "Agendado com sucesso 🔥" });
+  db.query(
+    "SELECT * FROM agendamentos WHERE data = ? AND hora = ?",
+    [data, hora],
+    (err, result) => {
+      if (err) return res.status(500).json({ msg: "Erro no servidor" });
+
+      if (result.length > 0) {
+        return res.status(400).json({ msg: "Horário já ocupado" });
       }
-    );
-  });
+
+      db.query(
+        "INSERT INTO agendamentos (nome, telefone, data, hora, status) VALUES (?, ?, ?, ?, ?)",
+        [nome, telefone, data, hora, "pendente"],
+        (err) => {
+          if (err) return res.status(500).json({ msg: "Erro ao salvar" });
+          res.json({ msg: "Agendado com sucesso 🔥" });
+        }
+      );
+    }
+  );
 });
 
-// 🔒 ROTAS PROTEGIDAS (ADMIN)
+// 🔒 LISTAR AGENDAMENTOS
 app.get("/agendamentos", verificarToken, (req, res) => {
   db.query("SELECT * FROM agendamentos ORDER BY data, hora", (err, result) => {
     if (err) return res.status(500).json({ msg: "Erro ao buscar" });
@@ -123,23 +154,31 @@ app.get("/agendamentos", verificarToken, (req, res) => {
   });
 });
 
+// 🔒 EXCLUIR
 app.delete("/agendamentos/:id", verificarToken, (req, res) => {
   const { id } = req.params;
+
   db.query("DELETE FROM agendamentos WHERE id = ?", [id], (err) => {
     if (err) return res.status(500).json({ msg: "Erro ao excluir" });
     res.json({ msg: "Excluído com sucesso" });
   });
 });
 
+// 🔒 CONCLUIR
 app.put("/agendamentos/:id", verificarToken, (req, res) => {
   const { id } = req.params;
-  db.query("UPDATE agendamentos SET status = 'concluido' WHERE id = ?", [id], (err) => {
-    if (err) return res.status(500).json({ msg: "Erro ao atualizar" });
-    res.json({ msg: "Concluído" });
-  });
+
+  db.query(
+    "UPDATE agendamentos SET status = 'concluido' WHERE id = ?",
+    [id],
+    (err) => {
+      if (err) return res.status(500).json({ msg: "Erro ao atualizar" });
+      res.json({ msg: "Concluído" });
+    }
+  );
 });
 
-// 🔥 NOVO → LISTAR CLIENTES (ADMIN)
+// 🔥 LISTAR CLIENTES
 app.get("/clientes", verificarToken, (req, res) => {
   db.query("SELECT * FROM clientes", (err, result) => {
     if (err) return res.status(500).json({ msg: "Erro ao buscar clientes" });
@@ -147,4 +186,5 @@ app.get("/clientes", verificarToken, (req, res) => {
   });
 });
 
+// 🚀 START
 app.listen(3000, () => console.log("Servidor rodando na porta 3000 🚀"));
