@@ -9,7 +9,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔥 CONEXÃO COM BANCO (CORRIGIDA)
+// 🔥 CONEXÃO COM BANCO (CORRIGIDA PARA VARIÁVEIS DE AMBIENTE)
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -18,11 +18,19 @@ const db = mysql.createConnection({
   port: process.env.DB_PORT
 });
 
-// 🔍 DEBUG (MOSTRA SE VARIÁVEIS ESTÃO FUNCIONANDO)
+// 🔍 DEBUG (MOSTRA SE AS VARIÁVEIS ESTÃO SENDO LIDAS NO LOG DO RENDER)
+console.log("Tentando conectar ao banco...");
 console.log("DB_HOST:", process.env.DB_HOST);
-console.log("DB_USER:", process.env.DB_USER);
-console.log("DB_NAME:", process.env.DB_NAME);
 console.log("DB_PORT:", process.env.DB_PORT);
+
+// 🔌 CONECTAR NO BANCO
+db.connect(err => {
+  if (err) {
+    console.log("Erro no MySQL:", err);
+  } else {
+    console.log("MySQL conectado 🔥");
+  }
+});
 
 // 🔒 MIDDLEWARE TOKEN
 function verificarToken(req, res, next) {
@@ -107,15 +115,6 @@ app.post("/login-cliente", (req, res) => {
   });
 });
 
-// 🔌 CONECTAR NO BANCO
-db.connect(err => {
-  if (err) {
-    console.log("Erro no MySQL:", err);
-  } else {
-    console.log("MySQL conectado 🔥");
-  }
-});
-
 // 🔹 AGENDAR
 app.post("/agendar", (req, res) => {
   const { nome, telefone, data, hora } = req.body;
@@ -186,5 +185,6 @@ app.get("/clientes", verificarToken, (req, res) => {
   });
 });
 
-// 🚀 START
-app.listen(3000, () => console.log("Servidor rodando na porta 3000 🚀"));
+// 🚀 START (USANDO PORTA DINÂMICA DO RENDER)
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT} 🚀`));
