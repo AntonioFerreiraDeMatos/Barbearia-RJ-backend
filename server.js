@@ -6,17 +6,16 @@ const jwt = require("jsonwebtoken");
 
 const app = express();
 
-// Configuração do CORS para aceitar conexões do seu site
 app.use(cors());
 app.use(express.json());
 
-// 🔥 CONFIGURAÇÃO DO BANCO (Recuperando do Render)
+// 🔥 CONFIGURAÇÃO DO BANCO (Recuperando do Render/Railway)
 const dbConfig = {
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  port: process.env.DB_PORT
+  port: process.env.DB_PORT || 3306
 };
 
 let db;
@@ -27,7 +26,7 @@ function handleDisconnect() {
   db.connect(err => {
     if (err) {
       console.error("Erro ao conectar no MySQL:", err.message);
-      setTimeout(handleDisconnect, 2000); // Tenta reconectar em 2s
+      setTimeout(handleDisconnect, 2000);
     } else {
       console.log("MySQL conectado 🔥");
     }
@@ -69,56 +68,66 @@ app.post("/login", (req, res) => {
     if (result.length === 0) return res.status(401).json({ msg: "Usuário não encontrado" });
 
     const admin = result[0];
-    const senhaValida = await bcrypt.compare(senha, admin.senha);
-    if (!senhaValida) return res.status(401).json({ msg: "Senha incorreta" });
+    
+    // Se você não criptografou a senha no banco ainda, use: if (senha === admin.senha)
+    const senhaValida = await bcrypt.compare(senha, admin.senha).catch(() => false);
+    
+    if (!senhaValida && senha !== admin.senha) { 
+      return res.status(401).json({ msg: "Senha incorreta" });
+    }
 
     const token = jwt.sign({ id: admin.id, usuario: admin.usuario }, "segredo123", { expiresIn: "1h" });
     res.json({ msg: "Login sucesso 🔥", token });
   });
 });
 
-// 🔹 AGENDAR (CORRIGIDO)
+// 🔹 AGENDAR (CLIENTE)
 app.post("/agendar", (req, res) => {
   const { nome, telefone, data, hora } = req.body;
+  if (!nome || !telefone || !data || !hora) return res.status(400).json({ msg: "Preencha tudo" });
 
-  if (!nome || !telefone || !data || !hora) {
-    return res.status(400).json({ msg: "Preencha todos os campos" });
-  }
-
-  // Primeiro verifica se o horário existe
   db.query("SELECT * FROM agendamentos WHERE data = ? AND hora = ?", [data, hora], (err, result) => {
-    if (err) {
-      console.error("Erro na consulta:", err);
-      return res.status(500).json({ msg: "Erro interno no banco" });
-    }
+    if (err) return res.status(500).json({ msg: "Erro no banco" });
+    if (result.length > 0) return res.status(400).json({ msg: "Horário ocupado" });
 
-    if (result.length > 0) {
-      return res.status(400).json({ msg: "Horário já ocupado" });
-    }
-
-    // Tenta inserir (Garante que a coluna 'status' existe ou remove do INSERT se não existir)
+    // Incluindo 'pendente' como status padrão
     db.query(
-      "INSERT INTO agendamentos (nome, telefone, data, hora) VALUES (?, ?, ?, ?)",
+      "INSERT INTO agendamentos (nome, telefone, data, hora, status) VALUES (?, ?, ?, ?, 'pendente')",
       [nome, telefone, data, hora],
       (err) => {
-        if (err) {
-          console.error("Erro ao salvar agendamento:", err.sqlMessage);
-          return res.status(500).json({ msg: "Erro ao salvar no banco. Verifique as tabelas." });
-        }
+        if (err) return res.status(500).json({ msg: "Erro ao salvar. Verifique se a coluna 'status' existe." });
         res.json({ msg: "Agendado com sucesso 🔥" });
       }
     );
   });
 });
 
-// 🔒 LISTAR AGENDAMENTOS
+// 🔒 LISTAR AGENDAMENTOS (ADMIN)
 app.get("/agendamentos", verificarToken, (req, res) => {
-  db.query("SELECT * FROM agendamentos ORDER BY data, hora", (err, result) => {
+  db.query("SELECT * FROM agendamentos ORDER BY data DESC, hora DESC", (err, result) => {
     if (err) return res.status(500).json({ msg: "Erro ao buscar" });
     res.json(result);
   });
 });
 
-// 🚀 START
+// ✅ ATUALIZAR STATUS (CONCLUIR) - ESSA ROTA FALTAVA
+app.put("/agendamentos/:id", verificarToken, (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  db.query("UPDATE agendamentos SET status = ? WHERE id = ?", [status, id], (err) => {
+    if (err) return res.status(500).json({ msg: "Erro ao atualizar" });
+    res.json({ msg: "Status atualizado 🔥" });
+  });
+});
+
+// ❌ EXCLUIR AGENDAMENTO - ESSA ROTA FALTAVA
+app.delete("/agendamentos/:id", verificarToken, (req, res) => {
+  const { id } = req.params;
+  db.query("DELETE FROM agendamentos WHERE id = ?", [id], (err) => {
+    if (err) return res.status(500).json({ msg: "Erro ao excluir" });
+    res.json({ msg: "Agendamento removido" });
+  });
+});
+
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT} 🚀`));
